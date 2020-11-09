@@ -25,7 +25,7 @@ kp2, des2 = sift.detectAndCompute(img2,None)
 # FLANN parameters
 FLANN_INDEX_KDTREE = 1
 index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
-search_params = dict(checks=50)
+search_params =# dict(checks=50)
 flann = cv.FlannBasedMatcher(index_params,search_params)
 matches = flann.knnMatch(des1,des2,k=2)
 good = []

@@ -34,18 +34,68 @@ for i, m in enumerate(matches):
     pts1.append(kp1[m.queryIdx].pt)
 
 
+
 # make opencv happy by turning our points into 32 bit floats
 pts1 = np.int32(pts1)
 pts2 = np.int32(pts2)
 
-# find fundamental matrix
-pts1 = np.int32(pts1)
-pts2 = np.int32(pts2)
+# find fundamental matrix (ORIGINAL)
 F, mask = cv.findFundamentalMat(pts1,pts2,cv.FM_LMEDS)
+#print(f"Original fund matrix: {F}")
 
 # we select only inlier points
 pts1 = pts1[mask.ravel()==1]
 pts2 = pts2[mask.ravel()==1]
+
+
+#############################
+## Find Fundamental Matrix ##
+#############################
+
+w = []
+for p1, p2 in zip(pts1, pts2):
+    u, v = p1
+    u_prime, v_prime = p2
+    temp = [u*u_prime, v*u_prime, u_prime, u*v_prime, v*v_prime, v_prime, u, v, 1] # collating necessary values to perform 8-point algorithm
+    w.append(temp)
+
+# need to turn into numpy array for opencv to be happy
+w_np = np.array(w)
+
+# perform SVD on 'w' to try and get Fundamental Matrix f (subject to f >= 1 to avoid degenerate scenarios)
+u, s, vh = np.linalg.svd(w_np)
+print("shape of u: " + str(u.shape))
+print("u: " + str(u))
+print("shape of s: " + str(s.shape))
+print("s: " + str(s))
+print("vh: " + str(vh))
+print("shape of vh: " + str(vh.shape))
+
+# 9th column is fundamental matrix
+fund_matrix = vh[:,8].reshape((3,3))
+
+u, s, vh = np.linalg.svd(fund_matrix)
+identity = np.identity(3)
+sigma = identity*s
+sigma[2,2] = 0
+F1 = np.matmul(np.matmul(u, sigma), vh)
+print("fund matrix: " + str(fund_matrix))
+a = np.matrix(np.append(pts2[0],1)).T
+a_prime = np.matrix(np.append(pts1[0],1)).T
+print(a)
+print(a_prime.T)
+sanity = np.matmul(a_prime.T, np.matmul(F1, a))
+print(str(sanity))
+
+for p1, p2 in zip(pts1, pts2):
+    a = np.matrix(np.append(p2,1)).T
+    a_prime = np.matrix(np.append(p1,1)).T
+    sanity = np.matmul(a_prime.T, np.matmul(F1, a))
+    print(str(sanity))
+
+#################################
+## Find Fundamental Matrix END ##
+#################################
 
 
 ##########################
@@ -70,14 +120,18 @@ def drawlines(img1,img2,lines,pts1,pts2):
 
 # Find epilines corresponding to points in right image (second image) and
 # drawing its lines on left image
-lines1 = cv.computeCorrespondEpilines(pts2.reshape(-1,1,2), 2,F)
+lines1 = cv.computeCorrespondEpilines(pts2.reshape(-1,1,2), 2,F1)
 lines1 = lines1.reshape(-1,3)
 img5,img6 = drawlines(img1,img2,lines1,pts1,pts2)
 # Find epilines corresponding to points in left image (first image) and
 # drawing its lines on right image
-lines2 = cv.computeCorrespondEpilines(pts1.reshape(-1,1,2), 1,F)
+lines2 = cv.computeCorrespondEpilines(pts1.reshape(-1,1,2), 1,F1)
 lines2 = lines2.reshape(-1,3)
 img3,img4 = drawlines(img2,img1,lines2,pts2,pts1)
 plt.subplot(121),plt.imshow(img5)
 plt.subplot(122),plt.imshow(img3)
 plt.show()
+
+##############################
+## Find & Draw Epilines END ##
+##############################
