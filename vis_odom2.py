@@ -16,19 +16,23 @@ kp2, des2 = orb.detectAndCompute(img2,None)
 
 
 # create BFMatcher object
-bf = cv.BFMatcher()
+bf = cv.BFMatcher(cv.NORM_HAMMING, crossCheck=True)
 # match descriptors
-matches = bf.knnMatch(des1,des2,k=2)
+matches = bf.match(des1,des2)
+# sort them in the order of their distance
+matches = sorted(matches, key = lambda x:x.distance)
 
-# perform the ratio test
-good = []
+# Draw first 10 matches.
+# img3 = cv.drawMatches(img1,kp1,img2,kp2,matches[:10],None,flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+# plt.imshow(img3),plt.show()
+
+# gather points
 pts1 = []
 pts2 = []
-for i, (m,n) in enumerate(matches):
-    if m.distance < 0.8*n.distance:
-        good.append(m)
-        pts2.append(kp2[m.trainIdx].pt)
-        pts1.append(kp1[m.queryIdx].pt)
+for i, m in enumerate(matches):
+    pts2.append(kp2[m.trainIdx].pt)
+    pts1.append(kp1[m.queryIdx].pt)
+
 
 # make opencv happy by turning our points into 32 bit floats
 pts1 = np.int32(pts1)
