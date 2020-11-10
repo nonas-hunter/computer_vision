@@ -39,6 +39,9 @@ for i, m in enumerate(matches):
 pts1 = np.int32(pts1)
 pts2 = np.int32(pts2)
 
+
+
+
 # find fundamental matrix (ORIGINAL)
 F, mask = cv.findFundamentalMat(pts1,pts2,cv.FM_LMEDS)
 #print(f"Original fund matrix: {F}")
@@ -52,10 +55,29 @@ pts2 = pts2[mask.ravel()==1]
 ## Find Fundamental Matrix ##
 #############################
 
+# print("SHAPE: " + str(pts1.shape))
+
+def normalize_points(arr):
+    centroid = np.mean(arr, axis=0)
+    scaling_factor = 2 / np.mean(np.square(arr), axis=0)
+    transformation_matrix = np.matrix([[scaling_factor[0],0,-centroid[0]*scaling_factor[0]],
+                                        [0,scaling_factor[1],-centroid[1]*scaling_factor[1]],
+                                        [0,0,1]])
+    array = np.array([np.append(row, 1) for row in arr])
+    return (np.matmul(transformation_matrix, array.T).T, transformation_matrix)
+
+
+pts1, T = normalize_points(pts1)
+pts2, T_prime = normalize_points(pts2)
+
+print("points1"+ str(pts1))
+print("points2"+ str(pts2))
+
+
 w = []
 for p1, p2 in zip(pts1, pts2):
-    u, v = p1
-    u_prime, v_prime = p2
+    u, v = p1[0,0], p1[0,1]
+    u_prime, v_prime = p2[0,0], p2[0,1]
     temp = [u*u_prime, v*u_prime, u_prime, u*v_prime, v*v_prime, v_prime, u, v, 1] # collating necessary values to perform 8-point algorithm
     w.append(temp)
 
@@ -79,13 +101,13 @@ identity = np.identity(3)
 sigma = identity*s
 sigma[2,2] = 0
 F1 = np.matmul(np.matmul(u, sigma), vh)
-print("fund matrix: " + str(fund_matrix))
+F1 = np.matmul(T_prime.T, np.matmul(F1, T))
+
+
 a = np.matrix(np.append(pts2[0],1)).T
 a_prime = np.matrix(np.append(pts1[0],1)).T
-print(a)
-print(a_prime.T)
+
 sanity = np.matmul(a_prime.T, np.matmul(F1, a))
-print(str(sanity))
 
 for p1, p2 in zip(pts1, pts2):
     a = np.matrix(np.append(p2,1)).T
@@ -93,6 +115,8 @@ for p1, p2 in zip(pts1, pts2):
     sanity = np.matmul(a_prime.T, np.matmul(F1, a))
     print(str(sanity))
 
+pts1 = np.int32(pts1)
+pts2 = np.int32(pts2)
 #################################
 ## Find Fundamental Matrix END ##
 #################################
