@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
+"""
+An Implementation of the Eight Point Algorithm
+Luke Nonas-Hunter
+Sam Kaplan
 
+RESOURCES
+OpenCV -- Epipolar Geometry:
+    https://docs.opencv.org/master/da/de9/tutorial_py_epipolar_geometry.html
+
+"""
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
@@ -19,44 +28,30 @@ kp2, des2 = orb.detectAndCompute(img2,None)
 bf = cv.BFMatcher(cv.NORM_HAMMING, crossCheck=True)
 # match descriptors
 matches = bf.match(des1,des2)
-# sort them in the order of their distance
-matches = sorted(matches, key = lambda x:x.distance)
-
-# Draw first 10 matches.
-# img3 = cv.drawMatches(img1,kp1,img2,kp2,matches[:10],None,flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
-# plt.imshow(img3),plt.show()
-
-# gather points
-pts1 = []
+# sort them in the order of their distanceimage is
 pts2 = []
 for i, m in enumerate(matches):
     pts2.append(kp2[m.trainIdx].pt)
     pts1.append(kp1[m.queryIdx].pt)
 
-
-
 # make opencv happy by turning our points into 32 bit floats
 pts1 = np.int32(pts1)
 pts2 = np.int32(pts2)
 
-
-
-
-# find fundamental matrix (ORIGINAL)
+# find fundamental matrix using OpenCV
 F, mask = cv.findFundamentalMat(pts1,pts2,cv.FM_LMEDS)
-#print(f"Original fund matrix: {F}")
+print("opencv Fund: "+ str(F))
 
 # we select only inlier points
 pts1 = pts1[mask.ravel()==1]
 pts2 = pts2[mask.ravel()==1]
 
 
-#############################
-## Find Fundamental Matrix ##
-#############################
+###########################
+## Eight-Point Algorithm ##
+###########################
 
-# print("SHAPE: " + str(pts1.shape))
-
+# function to normalize points (translate by image centroid and scale by 2/mean distance)
 def normalize_points(arr):
     centroid = np.mean(arr, axis=0)
     scaling_factor = 2 / np.mean(np.square(arr), axis=0)
@@ -64,20 +59,17 @@ def normalize_points(arr):
                                         [0,scaling_factor[1],-centroid[1]*scaling_factor[1]],
                                         [0,0,1]])
     array = np.array([np.append(row, 1) for row in arr])
-    return (np.matmul(transformation_matrix, array.T).T, transformation_matrix)
+    return ((arr - centroid) * scaling_factor, transformation_matrix)
 
+# perform normalization
+pts1_norm, T = normalize_points(pts1)
+pts2_norm, T_prime = normalize_points(pts2)
 
-pts1, T = normalize_points(pts1)
-pts2, T_prime = normalize_points(pts2)
-
-print("points1"+ str(pts1))
-print("points2"+ str(pts2))
-
-
+# collating our 8-point vector
 w = []
-for p1, p2 in zip(pts1, pts2):
-    u, v = p1[0,0], p1[0,1]
-    u_prime, v_prime = p2[0,0], p2[0,1]
+for p1, p2 in zip(pts1_norm, pts2_norm):
+    u, v = p1
+    u_prime, v_prime = p2
     temp = [u*u_prime, v*u_prime, u_prime, u*v_prime, v*v_prime, v_prime, u, v, 1] # collating necessary values to perform 8-point algorithm
     w.append(temp)
 
@@ -93,39 +85,42 @@ print("s: " + str(s))
 print("vh: " + str(vh))
 print("shape of vh: " + str(vh.shape))
 
-# 9th column is fundamental matrix
+# 9th column is fundamental matrix (could probably automate this for differnent sized arrays in the future)
 fund_matrix = vh[:,8].reshape((3,3))
 
+# need to get it to rank 2, so SVD again!
 u, s, vh = np.linalg.svd(fund_matrix)
-identity = np.identity(3)
+identity = np.identity(3) # identity matrix to add ones to things for correct matrix multplication
 sigma = identity*s
-sigma[2,2] = 0
+sigma[2,2] = 0 # rank 2 Fmatrix
+
+# need to undo normalization so we can get back into a convenient pixel cooridinate system
 F1 = np.matmul(np.matmul(u, sigma), vh)
 F1 = np.matmul(T_prime.T, np.matmul(F1, T))
 
 
+# sanity check to see if our Fmatrix is close to 0
 a = np.matrix(np.append(pts2[0],1)).T
 a_prime = np.matrix(np.append(pts1[0],1)).T
-
 sanity = np.matmul(a_prime.T, np.matmul(F1, a))
-
+print("***Sanity values should be very close to 0***")
 for p1, p2 in zip(pts1, pts2):
     a = np.matrix(np.append(p2,1)).T
     a_prime = np.matrix(np.append(p1,1)).T
     sanity = np.matmul(a_prime.T, np.matmul(F1, a))
-    print(str(sanity))
+    print("SANITY: " + str(sanity))
 
-pts1 = np.int32(pts1)
-pts2 = np.int32(pts2)
-#################################
-## Find Fundamental Matrix END ##
-#################################
+###############################
+## Eight-Point Algorithm END ##
+###############################
 
 
-##########################
-## Find & Draw Epilines ##
-##########################
 
+###############################
+## TESTING/DRAWING EPILINES  ##
+###############################
+
+# find and draw epilines (from OpenCV)
 def drawlines(img1,img2,lines,pts1,pts2):
     ''' img1 - image on which we draw the epilines for the points in img2
         lines - corresponding epilines '''
@@ -142,20 +137,16 @@ def drawlines(img1,img2,lines,pts1,pts2):
     return img1,img2
 
 
-# Find epilines corresponding to points in right image (second image) and
+# find epilines corresponding to points in right image (second image) and
 # drawing its lines on left image
-lines1 = cv.computeCorrespondEpilines(pts2.reshape(-1,1,2), 2,F1)
+lines1 = cv.computeCorrespondEpilines(pts2.reshape(-1,1,2), 2,F)
 lines1 = lines1.reshape(-1,3)
 img5,img6 = drawlines(img1,img2,lines1,pts1,pts2)
-# Find epilines corresponding to points in left image (first image) and
-# drawing its lines on right image
-lines2 = cv.computeCorrespondEpilines(pts1.reshape(-1,1,2), 1,F1)
+# find epilines corresponding to points in left image (first i
+# mage) and drawing its lines on right image
+lines2 = cv.computeCorrespondEpilines(pts1.reshape(-1,1,2), 1,F)
 lines2 = lines2.reshape(-1,3)
 img3,img4 = drawlines(img2,img1,lines2,pts2,pts1)
 plt.subplot(121),plt.imshow(img5)
 plt.subplot(122),plt.imshow(img3)
 plt.show()
-
-##############################
-## Find & Draw Epilines END ##
-##############################
